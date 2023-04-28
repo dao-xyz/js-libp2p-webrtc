@@ -39,7 +39,7 @@
   },
   "release": {
     "branches": [
-      "main"
+      "temp-release"
     ],
     "plugins": [
       [
