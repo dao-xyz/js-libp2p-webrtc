@@ -8,7 +8,7 @@ function webRTCDirect (): (components: WebRTCDirectTransportComponents) => Trans
 }
 
 function webRTC (init?: WebRTCTransportInit): (components: WebRTCTransportComponents) => Transport {
-  return (components: WebRTCTransportComponents) => new WebRTCTransport(components, init ?? {})
+  return (components: WebRTCTransportComponents) => new WebRTCTransport(components, init ?? { maxMsgSize: 16 * 1024 })
 }
 
 export { webRTC, webRTCDirect }

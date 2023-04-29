@@ -233,7 +233,7 @@ export class WebRTCDirectTransport implements Transport {
     // Track opened peer connection
     this.metrics?.dialerEvents.increment({ peer_connection: true })
 
-    const muxerFactory = new DataChannelMuxerFactory(peerConnection, this.metrics?.dialerEvents)
+    const muxerFactory = new DataChannelMuxerFactory(peerConnection, { metrics: this.metrics?.dialerEvents })
 
     // For outbound connections, the remote is expected to start the noise handshake.
     // Therefore, we need to secure an inbound noise connection from the remote.

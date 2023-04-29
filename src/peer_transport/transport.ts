@@ -21,6 +21,7 @@ export const CODE = protocols('webrtc').code
 
 export interface WebRTCTransportInit {
   rtcConfiguration?: RTCConfiguration
+  maxMsgSize?: number
 }
 
 export interface WebRTCTransportComponents {
@@ -120,7 +121,8 @@ export class WebRTCTransport implements Transport, Startable {
       const [pc, muxerFactory] = await initiateConnection({
         stream: rawStream,
         rtcConfiguration: this.init.rtcConfiguration,
-        signal: options.signal
+        signal: options.signal,
+        maxMsgSize: this.init.maxMsgSize
       })
       const webrtcMultiaddr = baseAddr.encapsulate(`${TRANSPORT}/p2p/${peerId.toString()}`)
       const result = await options.upgrader.upgradeOutbound(
@@ -151,7 +153,8 @@ export class WebRTCTransport implements Transport, Startable {
       const [pc, muxerFactory] = await handleIncomingStream({
         rtcConfiguration: this.init.rtcConfiguration,
         connection,
-        stream
+        stream,
+        maxMsgSize: this.init.maxMsgSize
       })
       const remotePeerId = connection.remoteAddr.getPeerId()
       const webrtcMultiaddr = connection.remoteAddr.encapsulate(`${TRANSPORT}/p2p/${remotePeerId}`)

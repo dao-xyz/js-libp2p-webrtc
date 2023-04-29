@@ -11,20 +11,24 @@ export interface DataChannelMuxerFactoryInit {
   metrics?: CounterGroup
 }
 
+const WEBRTC_PROTOCOL_NAME = '/webrtc'
+interface MessageSizeOptions { maxMsgSize?: number }
+interface MetricsOptions { metrics?: CounterGroup }
+export type DataChannelMuxerFactoryOptions = MessageSizeOptions & MetricsOptions
 export class DataChannelMuxerFactory implements StreamMuxerFactory {
   /**
    * WebRTC Peer Connection
    */
   private readonly peerConnection: RTCPeerConnection
   private streamBuffer: WebRTCStream[] = []
-  private readonly metrics?: CounterGroup
-
-  constructor (peerConnection: RTCPeerConnection, metrics?: CounterGroup, readonly protocol = '/webrtc') {
+  constructor (peerConnection: RTCPeerConnection, readonly options?: DataChannelMuxerFactoryOptions, readonly protocol = WEBRTC_PROTOCOL_NAME) {
     this.peerConnection = peerConnection
+    this.options = options
     // store any datachannels opened before upgrade has been completed
     this.peerConnection.ondatachannel = ({ channel }) => {
       const stream = new WebRTCStream({
         channel,
+        maxMsgSize: options?.maxMsgSize,
         stat: {
           direction: 'inbound',
           timeline: { open: 0 }
@@ -35,13 +39,14 @@ export class DataChannelMuxerFactory implements StreamMuxerFactory {
       })
       this.streamBuffer.push(stream)
     }
-    this.metrics = metrics
   }
 
-  createStreamMuxer (init?: StreamMuxerInit | undefined): StreamMuxer {
-    return new DataChannelMuxer(this.peerConnection, this.streamBuffer, this.protocol, init, this.metrics)
+  createStreamMuxer (init?: DataChannelMuxerInit): StreamMuxer {
+    return new DataChannelMuxer(this.peerConnection, this.streamBuffer, { ...init, ...this.options }, this.protocol)
   }
 }
+
+export type DataChannelMuxerInit = StreamMuxerInit & MessageSizeOptions & MetricsOptions
 
 /**
  * A libp2p data channel stream muxer
@@ -63,11 +68,6 @@ export class DataChannelMuxer implements StreamMuxer {
   streams: Stream[] = []
 
   /**
-   * Initialized stream muxer
-   */
-  init?: StreamMuxerInit
-
-  /**
    * Close or abort all tracked streams and stop the muxer
    */
   close: (err?: Error | undefined) => void = () => { }
@@ -82,12 +82,7 @@ export class DataChannelMuxer implements StreamMuxer {
    */
   sink: Sink<Source<Uint8Array | Uint8ArrayList>, Promise<void>> = nopSink
 
-  constructor (peerConnection: RTCPeerConnection, streams: Stream[], readonly protocol: string = '/webrtc', init?: StreamMuxerInit, metrics?: CounterGroup) {
-    /**
-     * Initialized stream muxer
-     */
-    this.init = init
-
+  constructor (peerConnection: RTCPeerConnection, streams: Stream[], readonly init: DataChannelMuxerInit, readonly protocol = WEBRTC_PROTOCOL_NAME) {
     /**
      * WebRTC Peer Connection
      */
@@ -102,6 +97,7 @@ export class DataChannelMuxer implements StreamMuxer {
     this.peerConnection.ondatachannel = ({ channel }) => {
       const stream = new WebRTCStream({
         channel,
+        maxMsgSize: init?.maxMsgSize,
         stat: {
           direction: 'inbound',
           timeline: {
@@ -140,6 +136,7 @@ export class DataChannelMuxer implements StreamMuxer {
     }
     const stream = new WebRTCStream({
       channel,
+      maxMsgSize: this.init?.maxMsgSize,
       stat: {
         direction: 'outbound',
         timeline: {

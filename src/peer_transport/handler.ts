@@ -13,13 +13,13 @@ const DEFAULT_TIMEOUT = 30 * 1000
 
 const log = logger('libp2p:webrtc:peer')
 
-export type IncomingStreamOpts = { rtcConfiguration?: RTCConfiguration } & IncomingStreamData
+export type IncomingStreamOpts = { rtcConfiguration?: RTCConfiguration, maxMsgSize?: number } & IncomingStreamData
 
-export async function handleIncomingStream ({ rtcConfiguration, stream: rawStream }: IncomingStreamOpts): Promise<[RTCPeerConnection, StreamMuxerFactory]> {
+export async function handleIncomingStream ({ rtcConfiguration, stream: rawStream, maxMsgSize }: IncomingStreamOpts): Promise<[RTCPeerConnection, StreamMuxerFactory]> {
   const signal = AbortSignal.timeout(DEFAULT_TIMEOUT)
   const stream = pbStream(abortableDuplex(rawStream, signal)).pb(pb.Message)
   const pc = new RTCPeerConnection(rtcConfiguration)
-  const muxerFactory = new DataChannelMuxerFactory(pc)
+  const muxerFactory = new DataChannelMuxerFactory(pc, { maxMsgSize })
 
   const connectedPromise: DeferredPromise<void> = pDefer()
   const answerSentPromise: DeferredPromise<void> = pDefer()
@@ -83,14 +83,15 @@ export interface ConnectOptions {
   stream: Stream
   signal: AbortSignal
   rtcConfiguration?: RTCConfiguration
+  maxMsgSize?: number
 }
 
-export async function initiateConnection ({ rtcConfiguration, signal, stream: rawStream }: ConnectOptions): Promise<[RTCPeerConnection, StreamMuxerFactory]> {
+export async function initiateConnection ({ rtcConfiguration, signal, stream: rawStream, maxMsgSize }: ConnectOptions): Promise<[RTCPeerConnection, StreamMuxerFactory]> {
   const stream = pbStream(abortableDuplex(rawStream, signal)).pb(pb.Message)
 
   // setup peer connection
   const pc = new RTCPeerConnection(rtcConfiguration)
-  const muxerFactory = new DataChannelMuxerFactory(pc)
+  const muxerFactory = new DataChannelMuxerFactory(pc, { maxMsgSize })
 
   const connectedPromise: DeferredPromise<void> = pDefer()
   resolveOnConnected(pc, connectedPromise)
