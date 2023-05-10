@@ -53,7 +53,7 @@ export function resolveOnConnected (pc: RTCPeerConnection, promise: DeferredProm
       case 'failed':
       case 'disconnected':
       case 'closed':
-        promise.reject()
+        promise.reject(new Error('peerConnectionState state changed to failed'))
         break
       default:
         break
