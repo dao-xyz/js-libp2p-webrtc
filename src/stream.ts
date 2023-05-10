@@ -151,6 +151,70 @@ class StreamState {
   }
 }
 
+interface MessageProcessor {
+  send: (bytes: Uint8ArrayList) => void
+  close?: () => void
+}
+
+const MAX_MESSAGE_SIZE = 16 * 1024
+const createMessageProcessor = (channel: RTCDataChannel, maxMsgSize: number = MAX_MESSAGE_SIZE): MessageProcessor => {
+  if (maxMsgSize != null) {
+    /**
+     * Don't allow channel.bufferedAmount to exceed maxMsgSize
+     */
+    let sendPaused: boolean = false
+    let sendMessageQueue: Uint8Array[] = []
+    const processMessageQueue = (): void => {
+      sendPaused = false
+      let message = sendMessageQueue.shift()
+      while (message != null) {
+        if (channel.bufferedAmount > maxMsgSize) {
+          sendPaused = true
+          sendMessageQueue.unshift(message)
+
+          const listener = (): void => {
+            channel.removeEventListener('bufferedamountlow', listener)
+            processMessageQueue()
+          }
+
+          channel.addEventListener('bufferedamountlow', listener)
+          return
+        }
+        channel.send(message)
+        message = sendMessageQueue.shift()
+      }
+    }
+
+    return {
+      send: (sendbuf: Uint8ArrayList) => {
+        /**
+         * Don't allow individual messages to exceed maxMsgSize
+         */
+        let from = 0
+        let to = Math.min(sendbuf.length, maxMsgSize)
+        while (to !== from) {
+          sendMessageQueue.push(sendbuf.subarray(from, to))
+          from = to
+          to = Math.min(to + maxMsgSize, sendbuf.length)
+        }
+        if (sendPaused) {
+          return
+        }
+
+        processMessageQueue()
+      },
+
+      close: () => {
+        sendMessageQueue = []
+      }
+    }
+  } else {
+    return {
+      send: (sendbuf: Uint8ArrayList) => { channel.send(sendbuf.subarray()) }
+    }
+  }
+}
+
 export class WebRTCStream implements Stream {
   /**
    * Unique identifier for a stream
@@ -210,11 +274,15 @@ export class WebRTCStream implements Stream {
    */
   closeCb?: (stream: WebRTCStream) => void
 
+  /**
+   * Processor for messages that allows throttling if necessary
+   */
+  messageProcessor: MessageProcessor
+
   constructor (opts: StreamInitOpts) {
     this.channel = opts.channel
     this.channel.binaryType = 'arraybuffer'
     this.id = this.channel.label
-
     this.stat = opts.stat
     switch (this.channel.readyState) {
       case 'open':
@@ -253,6 +321,8 @@ export class WebRTCStream implements Stream {
       const err = (evt as RTCErrorEvent).error
       this.abort(err)
     }
+
+    this.messageProcessor = createMessageProcessor(this.channel)
 
     const self = this
 
@@ -311,12 +381,12 @@ export class WebRTCStream implements Stream {
     const closeWrite = this._closeWriteIterable()
     for await (const buf of merge(closeWrite, src)) {
       if (this.streamState.isWriteClosed()) {
+        this.messageProcessor.close?.()
         return
       }
       const msgbuf = Message.encode({ message: buf.subarray() })
       const sendbuf = lengthPrefixed.encode.single(msgbuf)
-
-      this.channel.send(sendbuf.subarray())
+      this.messageProcessor.send(sendbuf)
     }
   }
 
@@ -435,7 +505,7 @@ export class WebRTCStream implements Stream {
     try {
       log.trace('Sending flag: %s', flag.toString())
       const msgbuf = Message.encode({ flag })
-      this.channel.send(lengthPrefixed.encode.single(msgbuf).subarray())
+      this.messageProcessor.send(lengthPrefixed.encode.single(msgbuf))
     } catch (err) {
       if (err instanceof Error) {
         log.error(`Exception while sending flag ${flag}: ${err.message}`)
